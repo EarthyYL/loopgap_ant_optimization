@@ -8,7 +8,7 @@ This file names the values and dispatches.  The work is in:
     check.py         verify the built outline and mesh
     meshview.py      plot the mesh and the copper the solver sees
     simulate.py      run openEMS, results to Sim_Path
-    postprocess.py   S11, Zin, B1 from the files in Sim_Path
+    postprocess.py   S11, Zin, B1, E from the files in Sim_Path
 
 Run with /home/yluo/opt/openEMS/venv/bin/python:
     python loopgap.py --check    # verify geometry + mesh, no solve
@@ -18,12 +18,15 @@ Run with /home/yluo/opt/openEMS/venv/bin/python:
     python loopgap.py --post     # S11 + B1 readout of the last solve, no solve
 """
 
-import os, sys, tempfile
+import os, sys
 import matplotlib.pyplot as plt
 from src.geometry import LoopGap
 import src.check as check, src.meshview as meshview, src.simulate as simulate, src.postprocess as postprocess
 
-Sim_Path = os.path.join(tempfile.gettempdir(), 'LoopGap')
+# Kept, not temp: one folder per run, each with the params.json that made it.
+# optimize.py puts its sweep points beside this design's own folder.
+Runs = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'runs')
+Sim_Path = os.path.join(Runs, 'loopgap')
 
 # UNITS: every length below is mm -- the grid unit is 1 mm.
 # The one exception is cu_t, which openEMS wants in METRES: the conducting-sheet

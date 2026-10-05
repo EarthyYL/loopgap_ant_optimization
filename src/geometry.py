@@ -82,7 +82,7 @@ class LoopGap:            # changes must go through dataclasses.replace(), which
 
     air_xy: float       # air added to the board's x and y extent (total, both sides)
     air_z: float        # air box height, 1/3 below the board and 2/3 above
-    f0: float           # centre frequency: FR4 loss, mesh resolution and the B1 dump use it
+    f0: float           # centre frequency: FR4 loss, mesh resolution and the B1/E dumps use it
     fc: float           # excitation half-bandwidth: f0 +- fc
 
     # ---------------- derived ----------------
@@ -237,6 +237,9 @@ class LoopGap:            # changes must go through dataclasses.replace(), which
         ### ---------------- B1 in the hole: the number that actually matters ----------------
         b1 = csx.AddDump('B1', dump_type=11, dump_mode=2, file_type=1, frequency=[f0])  # H, freq domain, HDF5
         b1.AddBox(start=[-R2, -R2, 0], stop=[R2, R2, subs_h + 2])
+        # ...and E over the same box (so the same cells), which has to stay small there
+        e = csx.AddDump('E', dump_type=10, dump_mode=2, file_type=1, frequency=[f0])    # E, freq domain, HDF5
+        e.AddBox(start=[-R2, -R2, 0], stop=[R2, R2, subs_h + 2])
 
         # LAST: everything that adds mesh lines has to come before this.
         # Drop near-duplicate mesh lines. Pinning both the slot edge on the outer circle

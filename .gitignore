@@ -1,7 +1,8 @@
 /.vscode
-/HANDOFF.internal.md
+/_*
 /Sewani_Files
-/__pycache__
-/_patch.py
+**/__pycache__/
+*.pyc
 /plot.ipynb
 /present
+/runs

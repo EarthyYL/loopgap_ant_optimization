@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Read a finished run from sim_path: S11, Zin and B1, printed and plotted.  Needs no
+Read a finished run from sim_path: S11, Zin, B1 and E, printed and plotted.  Needs no
 solver, so it works on an old run too (python loopgap.py --post).
 """
 
@@ -8,7 +8,17 @@ import os
 import numpy as np
 import h5py
 import matplotlib.pyplot as plt
-from openEMS.physical_constants import MUE0
+from openEMS.physical_constants import MUE0, C0
+
+
+def field(sim_path, name):
+    """(x, y, z in mm, |F| as (Nx, Ny, Nz)) at f0 from the frequency-domain dump `name`.
+    File layout: FieldData/FD/f0 is (3, Nx, Ny, Nz) complex, Mesh/x,y,z in METRES at cell
+    centres (dump_mode=2).  The dump holds f0 only (see geometry.py), not the resonance."""
+    with h5py.File(os.path.join(sim_path, f'{name}.h5'), 'r') as h:
+        x, y, z = (h['Mesh'][c][:] * 1e3 for c in 'xyz')
+        F = h['FieldData/FD/f0'][:]
+    return x, y, z, np.sqrt((np.abs(F)**2).sum(0))
 
 
 def analyse(geo, sim_path) -> None:
@@ -38,26 +48,37 @@ def analyse(geo, sim_path) -> None:
     ax.set_xlabel('Frequency (GHz)'); ax.set_ylabel('Zin (Ohm)'); ax.set_title('Input Impedance')
     ax.grid(); ax.legend(); ax.set_xmargin(0)
 
-    # |B1| on the hole axis at f0, per sqrt(W) incident from a 50 ohm source. Absolute, not
-    # relative: the FD dump and CalcPort share the same DFT scaling (x2, x dt) -- checked
-    # against Ampere's law around a lumped port, 0.4% off. File layout: FieldData/FD/f0 is
-    # (3, Nx, Ny, Nz) complex, Mesh/x,y,z in METRES at cell centres (dump_mode=2).
-    # The dump holds f0 only (see geometry.py), not the resonance.
-    with h5py.File(os.path.join(sim_path, 'B1.h5'), 'r') as h:
-        bx, by, bz = (h['Mesh'][c][:] * 1e3 for c in 'xyz')
-        H = h['FieldData/FD/f0'][:]
+    # |B1| and |E| on the hole axis at f0, per sqrt(W) incident from a 50 ohm source.
+    # Absolute, not relative: the FD dump and CalcPort share the same DFT scaling (x2, x dt)
+    # -- checked against Ampere's law around a lumped port, 0.4% off.
+    bx, by, bz, H = field(sim_path, 'B1')
     k0 = np.argmin(np.abs(f - f0))
-    B = MUE0 * np.sqrt((np.abs(H)**2).sum(0)) / np.sqrt(port.P_inc[k0]) * 1e6   # uT/sqrt(W), peak
+    B = MUE0 * H / np.sqrt(port.P_inc[k0]) * 1e6                  # uT/sqrt(W), peak
+    E = field(sim_path, 'E')[3] / np.sqrt(port.P_inc[k0])         # V/m/sqrt(W), peak; same box, same cells
     ix, iy, iz = np.argmin(np.abs(bx)), np.argmin(np.abs(by)), np.argmin(np.abs(bz - subs_h))
     print(f"B1 at top of hole (z={bz[iz]:.2f} mm): {B[ix, iy, iz]:.1f} uT/sqrt(W) incident, "
           f"f0 {f0/1e9:.2f} GHz, |S11| there {s11_dB[k0]:.1f} dB")
+    # E/cB is 1 in a plane wave; the loop-gap keeps E in the slot, so here it should be << 1.
+    # Unlike |E| per incident watt, it does not drop just because the match got worse.
+    print(f"|E| there: {E[ix, iy, iz]:.0f} V/m/sqrt(W) incident, "
+          f"E/cB1 {E[ix, iy, iz] / (C0 * B[ix, iy, iz] * 1e-6):.3f}")
 
-    fig, ax = plt.subplots(num="B1", tight_layout=True)
-    ax.plot(bz, B[ix, iy], 'k.-', lw=2)
-    ax.axvspan(0, subs_h, color='0.9', label='board thickness (hole is air)')
-    ax.set_xlabel('z (mm)'); ax.set_ylabel('|B1| (µT/√W, peak)')
-    ax.set_title(f'On the hole axis (x={bx[ix]:.3f}, y={by[iy]:.3f} mm) at {f0/1e9:.2f} GHz')
-    ax.grid(); ax.legend(); ax.set_xmargin(0)
+    for name, F, unit in [('B1', B, 'µT'), ('E', E, 'V/m')]:
+        fig, ax = plt.subplots(num=name, tight_layout=True)
+        ax.plot(bz, F[ix, iy], 'k.-', lw=2)
+        ax.axvspan(0, subs_h, color='0.9', label='board thickness (hole is air)')
+        ax.set_xlabel('z (mm)'); ax.set_ylabel(f'|{name}| ({unit}/√W, peak)')
+        ax.set_title(f'On the hole axis (x={bx[ix]:.3f}, y={by[iy]:.3f} mm) at {f0/1e9:.2f} GHz')
+        ax.grid(); ax.legend(); ax.set_xmargin(0)
+
+def e_center(geo, sim_path) -> float:
+    """|E| at geo.f0 on the hole axis at the top of the hole -- the B1 readout point -- in
+    V/m per sqrt(W) incident, from a finished run: no plots, for an optimiser."""
+    _, port = geo.build()
+    port.CalcPort(sim_path, geo.f0)   # the dump holds f0 only, so normalise there
+    x, y, z, E = field(sim_path, 'E')
+    i = np.argmin(np.abs(x)), np.argmin(np.abs(y)), np.argmin(np.abs(z - geo.subs_h))
+    return float(E[i] / np.sqrt(port.P_inc[0]))
 
 def s11_dB(geo, sim_path, f) -> float:
     """S11 in dB at exactly f (Hz) from a finished run: no plots, for an optimiser."""
