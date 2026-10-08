@@ -6,3 +6,5 @@
 /plot.ipynb
 /present
 /runs
+*.sif
+cmaes_*.log
