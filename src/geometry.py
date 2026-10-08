@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Planar loop-gap resonator geometry: parameters in, CSXCAD structure out.
+Planar loop-gap resonator geometry
+Parameters -> CSXCAD object
 
 Geometry (top copper), all dims mm, hole D2 centred on the origin:
   - outer copper disc  diameter D1, centre (0, (l1-l2)/2)   [non-concentric with D2]
   - central hole       diameter D2, centre (0, 0)
-  - radial slot        width g, from top of D2 out to top of D1  -> copper is a "C"
+  - radial slot        width g, from top of D2 out to top of D1
   - feed trace         microstrip from the SMA pin down onto the left arm of the loop
   - bottom layer       solid ground
-
-No solver and no values here: the values are named in loopgap.py, and simulate.py
-hands the CSX from build() to openEMS.
 """
 
 from dataclasses import dataclass
@@ -53,7 +51,7 @@ class LoopGap:            # changes must go through dataclasses.replace(), which
     D2: float           # central hole diameter (sample / optical access)
     l1: float           # hole centre -> top of D1
     l2: float           # hole centre -> bottom of D1
-    g: float            # slot width  <-- dominates the resonant frequency
+    g: float            # slot width
 
     subs_eps: float     # substrate relative permittivity
     subs_tand: float    # substrate loss tangent: this sets the achievable Q

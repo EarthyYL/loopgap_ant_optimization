@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Run openEMS on a LoopGap.  Solver settings only: the geometry comes from geo.build(),
-and the results are left as files in sim_path for postprocess.py to read, with
-params.json saying what made them.
+Run openEMS on a LoopGap.  Solver settings only, geometry comes from geo.build()
 """
 
 import os, json
@@ -16,7 +14,8 @@ def params(geo: LoopGap, sim_time) -> dict:
     return {**asdict(geo), 'sim_time': sim_time}
 
 
-def run(geo: LoopGap, sim_path, sim_time) -> None:
+def run(geo: LoopGap, sim_path, sim_time, threads=0) -> None:
+    # threads: openEMS engine threads, 0 = all cores.  Set it when several runs share a node.
     # NrTS is a STEP COUNT, so refining the mesh shrinks dt and silently shortens the
     # simulated time.  Express the run length in seconds instead: openEMS takes
     # min(NrTS, MaxTime/dt), so NrTS stays a safety ceiling and MaxTime is the real wall.
@@ -33,7 +32,7 @@ def run(geo: LoopGap, sim_path, sim_time) -> None:
     os.makedirs(sim_path, exist_ok=True)   # Run only mkdirs the last level
     if os.path.exists(record):
         os.remove(record)
-    FDTD.Run(sim_path, cleanup=True)      # note: chdirs into sim_path
+    FDTD.Run(sim_path, cleanup=True, numThreads=threads)   # note: chdirs into sim_path
     with open(record, 'w') as f:          # last, so it only exists for a finished run
         json.dump(params(geo, sim_time), f, indent=1)
 

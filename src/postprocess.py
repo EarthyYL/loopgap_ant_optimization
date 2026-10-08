@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Read a finished run from sim_path: S11, Zin, B1 and E, printed and plotted.  Needs no
-solver, so it works on an old run too (python loopgap.py --post).
+Read a finished run from sim_path: S11, Zin, B1 and E, printed and plotted.  Can work
+on an old run too (python loopgap.py --post).
 """
 
 import os
@@ -71,17 +71,28 @@ def analyse(geo, sim_path) -> None:
         ax.set_title(f'On the hole axis (x={bx[ix]:.3f}, y={by[iy]:.3f} mm) at {f0/1e9:.2f} GHz')
         ax.grid(); ax.legend(); ax.set_xmargin(0)
 
-def e_center(geo, sim_path) -> float:
-    """|E| at geo.f0 on the hole axis at the top of the hole -- the B1 readout point -- in
-    V/m per sqrt(W) incident, from a finished run: no plots, for an optimiser."""
+def on_axis(geo, sim_path, name, z) -> float:
+    """|F| of the dump `name` at geo.f0 on the hole axis at height z (mm), per sqrt(W)
+    incident, from a finished run: no plots, for an optimiser.  Linear in z between cell
+    centres: above the board they are 0.1-0.2 mm apart, so the nearest one can be far off.
+    The axis is air all the way up (the hole is a through-hole), so no interface to straddle."""
     _, port = geo.build()
-    port.CalcPort(sim_path, geo.f0)   # the dump holds f0 only, so normalise there
-    x, y, z, E = field(sim_path, 'E')
-    i = np.argmin(np.abs(x)), np.argmin(np.abs(y)), np.argmin(np.abs(z - geo.subs_h))
-    return float(E[i] / np.sqrt(port.P_inc[0]))
+    port.CalcPort(sim_path, geo.f0)   # the dumps hold f0 only, so normalise there
+    x, y, zz, F = field(sim_path, name)
+    ix, iy = np.argmin(np.abs(x)), np.argmin(np.abs(y))
+    return float(np.interp(z, zz, F[ix, iy]) / np.sqrt(port.P_inc[0]))
 
-def s11_dB(geo, sim_path, f) -> float:
-    """S11 in dB at exactly f (Hz) from a finished run: no plots, for an optimiser."""
+def e_center(geo, sim_path) -> float:
+    """|E| in V/m per sqrt(W) incident at the top of the hole -- the B1 readout point."""
+    return on_axis(geo, sim_path, 'E', geo.subs_h)
+
+def b1_at(geo, sim_path, z) -> float:
+    """|B1| in uT per sqrt(W) incident, peak, on the hole axis at height z (mm)."""
+    return MUE0 * on_axis(geo, sim_path, 'B1', z) * 1e6
+
+def s11_dB(geo, sim_path, f) -> np.ndarray:
+    """S11 in dB at exactly the frequencies f (Hz, array) from a finished run: no plots, for
+    an optimiser.  A scalar f still gives a length-1 array."""
     _, port = geo.build()
     port.CalcPort(sim_path, f)   # transform evaluated at f itself, no frequency grid
-    return float(20 * np.log10(abs(port.uf_ref[0] / port.uf_inc[0])))
+    return 20 * np.log10(np.abs(port.uf_ref / port.uf_inc))

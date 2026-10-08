@@ -1,12 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Plot the xy mesh at the top copper.  No solve.
-
-Left: the true outline under the grid lines.  Right: the copper the solver actually uses.
-A conducting sheet lives on Yee edges, each one copper when the CSX says so at its
-midpoint (openEMS operator_ext_conductingsheet.cpp), so the right panel asks the built CSX
-that same question per edge -- it shows the staircase openEMS simulates.  AppCSXCAD draws
-the exact outline instead, and its polygon triangles (loop.stl) are display only.
 """
 
 import numpy as np
@@ -17,6 +11,7 @@ SOLVER_MASK = 0x002 | 0x004   # MATERIAL | METAL: the property types openEMS que
 
 
 def plot(geo) -> None:
+    # geo is a LoopGap object
     R1, R2, yc, z = geo.R1, geo.R2, geo.yc, geo.subs_h
     csx, _ = geo.build()
     csx.Update()   # openEMS does this at setup; without it polygons and cylinders are never "inside"
