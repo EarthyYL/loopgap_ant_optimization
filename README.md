@@ -44,7 +44,9 @@ sbatch sim.sh
 
 ## 4. Wait for it to finish
 
-The run is hands-free: it stops by itself, after at most ~100 generations or earlier once the search converges, within a day or two. It's done when the job is gone from `squeue -u $USER` and `cmaes_<jobid>.log` ends with an `every design: …` line (or `sacct -j <jobid> -o State` shows `COMPLETED`) - I would appreciate if you could check in every once in a while to make sure it's alive.
+The run is hands-free: it stops by itself, after at most ~100 generations or earlier once the search converges, within a day or two. It's done when the job is gone from `squeue -u $USER` AND `cmaes_<jobid>.log` ends with an `every design: …` line (or `sacct -j <jobid> -o State` shows `COMPLETED`). If the second set of conditions is not fulfilled, then it is failed, not done. 
+
+Check the log file after starting to verify that the container was setup correctly (`INFO:    Creating SIF file...` is the last line of the Apptainer setup). It will take a few minutes, then you should be good to let it run. I would appreciate it if you can check back in every once in a while to check for completion/failure.
 
 If you want to peek at the work while it's running, `cmaes_<jobid>.log` is updated per-generation, showing progress in our objectives. Individual designs and results are kept in the `runs/opt/` folder, and `data/cmaes.csv` lists every design with its cost.
 
@@ -52,9 +54,7 @@ If you want to peek at the work while it's running, `cmaes_<jobid>.log` is updat
 
 Submit the same `sbatch sim.sh` again. The run has a fixed seed and every finished solve is kept in `runs/opt/`, so it will quickly replay back to where it stopped, without needing to do full solves.
 
-Between resubmits, do **not** change the code (no `git pull`), `--popsize`, `--seed` or
-`loopgap.sif`: any of those makes it a different run and the replay breaks.
-Changing `--cpus-per-task` is fine.
+Between resubmits, do **not** change the code, it will break.
 
 If it fails at the same generation again, one design is crashing openEMS: don't resubmit, pack up the run as below and send it.
 
