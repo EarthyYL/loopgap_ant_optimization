@@ -6,7 +6,7 @@ Hard thresholds:
 2. S11 <= -10dB across +- 0.1 GHz centered on 2.87 Ghz
 """
 
-import os, json, hashlib, argparse
+import os, sys, ctypes, json, hashlib, argparse
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import cma
@@ -31,11 +31,25 @@ THREADS = 0   # openEMS threads per solve, 0 = all cores; the driver sets it in 
 def solve(geo) -> str:
     """Run folder named by a hash of everything that decides the output, so parallel workers
     never collide and a design asked for twice is read back, not re-solved.  Code changes
-    (mesh, dumps) are not in the hash: clear runs/opt after one of those."""
+    (mesh, dumps) are not in the hash: clear runs/opt after one of those.
+    openEMS's own output goes to openems.log in that folder, so the job log keeps only the
+    driver's lines instead of 8 solves' progress lines interleaved."""
     p = json.dumps(simulate.params(geo, sim_time), sort_keys=True)
     path = os.path.join(Runs, 'opt', hashlib.sha1(p.encode()).hexdigest()[:12])   # absolute: Run chdirs
     if not simulate.done(geo, path, sim_time):
-        simulate.run(geo, path, sim_time, THREADS)
+        os.makedirs(path, exist_ok=True)
+        # openEMS prints from C++, which Python's redirect_stdout can't catch, so point this
+        # worker's stdout/stderr at the solve's own log while it runs (one solve per worker)
+        with open(os.path.join(path, 'openems.log'), 'w') as log:
+            saved = os.dup(1), os.dup(2)
+            os.dup2(log.fileno(), 1); os.dup2(log.fileno(), 2)
+            try:
+                simulate.run(geo, path, sim_time, THREADS)
+            finally:   # flush C's buffers too, or openEMS's last lines land in the job log
+                sys.stdout.flush(); sys.stderr.flush(); ctypes.CDLL(None).fflush(None)
+                os.dup2(saved[0], 1); os.dup2(saved[1], 2)
+                for fd in saved:
+                    os.close(fd)
     return path
 
 
