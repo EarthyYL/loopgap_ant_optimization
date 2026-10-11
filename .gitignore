@@ -8,3 +8,4 @@
 /runs
 *.sif
 cmaes_*.log
+/data

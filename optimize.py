@@ -117,6 +117,7 @@ if __name__ == '__main__':
         verb_log=0))    # data/cmaes.csv logs every design instead
     # absolute, and rewritten from the top: a replayed run re-logs every generation anyway
     log = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'cmaes.csv')
+    os.makedirs(os.path.dirname(log), exist_ok=True)   # data/ is gitignored, so a fresh clone lacks it
     with open(log, 'w') as f, ProcessPoolExecutor(a.popsize, initializer=set_threads, initargs=(a.threads,)) as pool:
         f.write('gen,' + ','.join(f'{k}_mm' for k in KNOBS) + ',cost\n')
         while not es.stop():
