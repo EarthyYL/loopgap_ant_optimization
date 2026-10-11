@@ -46,13 +46,13 @@ sbatch sim.sh
 
 The run is hands-free: it stops by itself, after at most ~100 generations or earlier once the search converges, within a day or two. It's done when the job is gone from `squeue -u $USER` AND `cmaes_<jobid>.log` ends with an `every design: …` line (or `sacct -j <jobid> -o State` shows `COMPLETED`). If the second set of conditions is not fulfilled, then it is failed, not done. 
 
-Check the log file after starting to verify that the container was setup correctly (`INFO:    Creating SIF file...` is the last line of the Apptainer setup). It will take a few minutes, then you should be good to let it run. I would appreciate it if you can check back in every once in a while to check for completion/failure.
+Check the log file after starting to verify that the optimizer has started (its first print looks something like `(4_w,8)-aCMA-ES (mu_w=2.6,w_1=52%) in dimension 5 (seed=1, …)`), then you should be good to let it run. After that, I would appreciate it if you can check back in once or twice a day to check for completion/failure.
 
 If you want to peek at the work while it's running, `cmaes_<jobid>.log` is updated per-generation, showing progress in our objectives. Individual designs and results are kept in the `runs/opt/` folder, and `data/cmaes.csv` lists every design with its cost.
 
 ## 5. If the job dies (time limit, node failure, scancel)
 
-Submit the same `sbatch sim.sh` again. The run has a fixed seed and every finished solve is kept in `runs/opt/`, so it will quickly replay back to where it stopped, without needing to do full solves.
+Submit the same `sbatch sim.sh` again, and let me know. The run has a fixed seed and every finished solve is kept in `runs/opt/`, so it will quickly replay back to where it stopped, without needing to do full solves.
 
 Between resubmits, do **not** change the code, it will break.
 
