@@ -69,7 +69,8 @@ class LoopGap:            # changes must go through dataclasses.replace(), which
     mnt_inset: float    # corner hole edge to block edge
     mnt_metal: bool     # True = PEC posts (screws/standoffs), worst case
 
-    trace_w: float      # feed trace width
+    trace_w: float      # feed width where it meets the loop
+    trace_w0: float     # feed width at the SMA; = trace_w for a straight feed
     tap_depth: float    # how far the trace reaches down onto the left arm
     sma_inset: float    # SMA centre pin to board edge: trace ends and port sits here
     cu_sigma: float     # copper conductivity (S/m): finite, not PEC
@@ -94,6 +95,9 @@ class LoopGap:            # changes must go through dataclasses.replace(), which
     y_feed = property(lambda s: s.y_sma - s.sma_inset)      # SMA centre pin
     trace_x1 = property(lambda s: -s.g / 2)                 # right edge, flush with the slot's left edge
     trace_x0 = property(lambda s: -s.g / 2 - s.trace_w)     # left edge
+    # the feed's edges at the SMA: a taper keeps the tap's centreline, widening to both sides
+    feed_x0 = property(lambda s: s.trace_x1 - (s.trace_w + s.trace_w0) / 2)
+    feed_x1 = property(lambda s: s.trace_x1 - (s.trace_w - s.trace_w0) / 2)
     trace_y0 = property(lambda s: s.yc + s.R1 - s.tap_depth)  # bottom end, down on the arm
     # floor for dropping near-duplicate mesh lines; see build()
     mesh_floor = property(lambda s: min(0.025, s.g / 8, s.mask_t / 2 if s.mask_t > 0 else np.inf))
@@ -117,7 +121,8 @@ class LoopGap:            # changes must go through dataclasses.replace(), which
         assert arm_x <= self.trace_x0, (
             f"trace overhangs the disc: arm reaches x={arm_x:.2f} at the tap but trace "
             f"needs {self.trace_x0:.2f} -- raise tap_depth or cut trace_w")
-        assert self.trace_x0 >= -self.neck_w / 2, "trace runs off the side of the neck -- widen neck_w"
+        assert min(self.trace_x0, self.feed_x0) >= -self.neck_w / 2 and self.feed_x1 <= self.neck_w / 2, \
+            "feed runs off the side of the neck -- widen neck_w"
         assert self.trace_y0 > self.yi, "tap reaches past the slot down to the hole"
         assert self.trace_y0 < self.y_feed <= self.y_sma, "SMA pin must sit on the board, beyond the tap"
 
@@ -156,8 +161,14 @@ class LoopGap:            # changes must go through dataclasses.replace(), which
         # slot, so it contacts one side of g and never reaches the right arm.  A trace centred
         # on x=0 bridges the gap over its bottom few tenths of a mm, shorting the capacitor
         # that sets the resonance.
-        loop.AddBox(priority=10, start=[trace_x0, trace_y0, subs_h],
-                                 stop =[trace_x1, y_feed,   subs_h])
+        # The feed tapers linearly from trace_w0 at the SMA to trace_w at the top of the disc, then
+        # runs straight down onto the arm (inside copper, so tap_depth changes nothing physical).
+        # Sasaki et al. 2016 (arXiv:1605.04627) use 3.3 -> 0.54 mm over 23 mm on 1.6 mm FR4 to
+        # match 50 ohm; the paper gives no taper shape, so linear.  trace_w0 == trace_w is straight.
+        y_top = yc + R1
+        loop.AddPolygon([[self.feed_x0, self.feed_x1, trace_x1, trace_x1, trace_x0, trace_x0],
+                         [y_feed,       y_feed,       y_top,    trace_y0, trace_y0, y_top]],
+                        norm_dir='z', elevation=subs_h, priority=10)
 
         ### ---------------- substrate: block + neck ----------------
         kappa = 2 * np.pi * f0 * EPS0 * self.subs_eps * self.subs_tand   # only valid near f0
@@ -228,12 +239,15 @@ class LoopGap:            # changes must go through dataclasses.replace(), which
         mesh.AddLine('z', np.linspace(0, subs_h, self.subs_cells + 1))
 
         ### ---------------- feed port (through-hole SMA centre pin modelled as a lumped port) -----
-        port = LumpedPort(csx, 1, 50, [trace_x0, y_feed, 0], [trace_x1, y_feed, subs_h],
+        port = LumpedPort(csx, 1, 50, [self.feed_x0, y_feed, 0], [self.feed_x1, y_feed, subs_h],
                           'z', 1.0, priority=5)
-        mesh.AddLine('x', [trace_x0, trace_x1]); mesh.AddLine('y', y_feed)   # = edges2grid='xy'
+        mesh.AddLine('x', [self.feed_x0, self.feed_x1]); mesh.AddLine('y', y_feed)   # = edges2grid='xy'
 
         ### ---------------- B1 in the hole: the number that actually matters ----------------
-        b1 = csx.AddDump('B1', dump_type=11, dump_mode=2, file_type=1, frequency=[f0])  # H, freq domain, HDF5
+        # B1 across f0 +- 0.5 GHz in 50 MHz steps, f0 itself included (postprocess.b1_spectrum);
+        # the box is a few thousand cells, so 21 frequencies cost little
+        b1 = csx.AddDump('B1', dump_type=11, dump_mode=2, file_type=1,      # H, freq domain, HDF5
+                         frequency=list(np.linspace(f0 - 0.5e9, f0 + 0.5e9, 21)))
         b1.AddBox(start=[-R2, -R2, 0], stop=[R2, R2, subs_h + 2])
         # ...and E over the same box (so the same cells), which has to stay small there
         e = csx.AddDump('E', dump_type=10, dump_mode=2, file_type=1, frequency=[f0])    # E, freq domain, HDF5
@@ -254,7 +268,9 @@ class LoopGap:            # changes must go through dataclasses.replace(), which
         # 60.5 fs in all of them; the cost is cells only (2026-10-04 runs).
         max_res = C0 / (f0 + self.fc) / 1e-3 / 20   # lambda/20 at the top of the band
         fine = dict(x=[(-R2, R2, R2 / 5), (-R1, R1, self.cu_res)],
-                    y=[(-R2, R2, R2 / 5), (yc - R1, yc + R1, self.cu_res)], z=[])
+                    # a taper's slanted edges need the fine cells all the way up the feed
+                    y=[(-R2, R2, R2 / 5), (yc - R1, y_feed if self.trace_w0 != self.trace_w else yc + R1,
+                                           self.cu_res)], z=[])
         for d, ax in enumerate('xyz'):
             L = np.unique(mesh.GetLines(d))
             mesh.SetLines(ax, graded(L[np.r_[True, np.diff(L) > self.mesh_floor]], max_res, 1.4, fine[ax]))

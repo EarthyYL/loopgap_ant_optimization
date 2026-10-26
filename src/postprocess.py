@@ -11,13 +11,15 @@ import matplotlib.pyplot as plt
 from openEMS.physical_constants import MUE0, C0
 
 
-def field(sim_path, name):
-    """(x, y, z in mm, |F| as (Nx, Ny, Nz)) at f0 from the frequency-domain dump `name`.
-    File layout: FieldData/FD/f0 is (3, Nx, Ny, Nz) complex, Mesh/x,y,z in METRES at cell
-    centres (dump_mode=2).  The dump holds f0 only (see geometry.py), not the resonance."""
+def field(sim_path, name, f):
+    """(x, y, z in mm, |F| as (Nx, Ny, Nz)) from the frequency-domain dump `name`, at its
+    dumped frequency nearest f.  File layout: FieldData/FD/f<k> is (3, Nx, Ny, Nz) complex, one
+    per dumped frequency (attr 'frequency'); Mesh/x,y,z in METRES at cell centres (dump_mode=2).
+    E holds f0 only, B1 a band around it (geometry.py)."""
     with h5py.File(os.path.join(sim_path, f'{name}.h5'), 'r') as h:
         x, y, z = (h['Mesh'][c][:] * 1e3 for c in 'xyz')
-        F = h['FieldData/FD/f0'][:]
+        fd = h['FieldData/FD']
+        F = fd[min(fd, key=lambda k: abs(fd[k].attrs['frequency'] - f))][:]
     return x, y, z, np.sqrt((np.abs(F)**2).sum(0))
 
 
@@ -51,10 +53,10 @@ def analyse(geo, sim_path) -> None:
     # |B1| and |E| on the hole axis at f0, per sqrt(W) incident from a 50 ohm source.
     # Absolute, not relative: the FD dump and CalcPort share the same DFT scaling (x2, x dt)
     # -- checked against Ampere's law around a lumped port, 0.4% off.
-    bx, by, bz, H = field(sim_path, 'B1')
+    bx, by, bz, H = field(sim_path, 'B1', f0)
     k0 = np.argmin(np.abs(f - f0))
     B = MUE0 * H / np.sqrt(port.P_inc[k0]) * 1e6                  # uT/sqrt(W), peak
-    E = field(sim_path, 'E')[3] / np.sqrt(port.P_inc[k0])         # V/m/sqrt(W), peak; same box, same cells
+    E = field(sim_path, 'E', f0)[3] / np.sqrt(port.P_inc[k0])         # V/m/sqrt(W), peak; same box, same cells
     ix, iy, iz = np.argmin(np.abs(bx)), np.argmin(np.abs(by)), np.argmin(np.abs(bz - subs_h))
     print(f"B1 at top of hole (z={bz[iz]:.2f} mm): {B[ix, iy, iz]:.1f} uT/sqrt(W) incident, "
           f"f0 {f0/1e9:.2f} GHz, |S11| there {s11_dB[k0]:.1f} dB")
@@ -77,10 +79,25 @@ def on_axis(geo, sim_path, name, z) -> float:
     centres: above the board they are 0.1-0.2 mm apart, so the nearest one can be far off.
     The axis is air all the way up (the hole is a through-hole), so no interface to straddle."""
     _, port = geo.build()
-    port.CalcPort(sim_path, geo.f0)   # the dumps hold f0 only, so normalise there
-    x, y, zz, F = field(sim_path, name)
+    port.CalcPort(sim_path, geo.f0)
+    x, y, zz, F = field(sim_path, name, geo.f0)
     ix, iy = np.argmin(np.abs(x)), np.argmin(np.abs(y))
     return float(np.interp(z, zz, F[ix, iy]) / np.sqrt(port.P_inc[0]))
+
+def b1_spectrum(geo, sim_path, z) -> tuple[np.ndarray, np.ndarray]:
+    """(f in Hz, |B1| in uT/sqrt(W) incident, peak) on the hole axis at height z (mm), at every
+    frequency the B1 dump holds.  Each frequency is normalised by its own incident power."""
+    with h5py.File(os.path.join(sim_path, 'B1.h5'), 'r') as h:
+        x, y, zz = (h['Mesh'][c][:] * 1e3 for c in 'xyz')
+        fd = h['FieldData/FD']
+        f = np.array([fd[k].attrs['frequency'] for k in fd])
+        H = [np.sqrt((np.abs(fd[k][:])**2).sum(0)) for k in fd]
+    ix, iy = np.argmin(np.abs(x)), np.argmin(np.abs(y))
+    _, port = geo.build()
+    port.CalcPort(sim_path, f)
+    B = MUE0 * np.array([np.interp(z, zz, Hk[ix, iy]) for Hk in H]) / np.sqrt(port.P_inc) * 1e6
+    o = np.argsort(f)
+    return f[o], B[o]
 
 def e_center(geo, sim_path) -> float:
     """|E| in V/m per sqrt(W) incident at the top of the hole -- the B1 readout point."""
