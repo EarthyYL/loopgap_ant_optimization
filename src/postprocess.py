@@ -113,3 +113,9 @@ def s11_dB(geo, sim_path, f) -> np.ndarray:
     _, port = geo.build()
     port.CalcPort(sim_path, f)   # transform evaluated at f itself, no frequency grid
     return 20 * np.log10(np.abs(port.uf_ref / port.uf_inc))
+
+def zin(geo, sim_path, f) -> np.ndarray:
+    """Complex input impedance (ohm) at the port at the frequencies f (Hz, array)."""
+    _, port = geo.build()
+    port.CalcPort(sim_path, f)
+    return port.uf_tot / port.if_tot

@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Planar ring (loop-gap) antenna for NV- ODMR: Sasaki et al.'s design on standard 1.6 mm FR4
-(Rev. Sci. Instrum. 87, 053904 (2016); arXiv:1605.04627), measured at 2.79 GHz with ~400 MHz
-bandwidth.  Same loop as the Sewani et al. board (Am. J. Phys. 88, 1156 (2020);
-Sewani_Files/NV_PCB_Antenna.brd), which moved it to 0.254 mm FR4.
+Planar ring (loop-gap) antenna for NV- ODMR.  geo is Rev 2: Sasaki et al.'s design on standard
+1.6 mm FR4 (Rev. Sci. Instrum. 87, 053904 (2016); arXiv:1605.04627; measured at 2.79 GHz with
+~400 MHz bandwidth), with the slot widened 0.1 -> 0.25 mm (centres it on 2.87 GHz, clears JLCPCB's
+same-net rule) and JLCPCB's 1 oz copper.  Same loop as the Sewani et al. board (Rev 0; Am. J.
+Phys. 88, 1156 (2020); Sewani_Files/NV_PCB_Antenna.brd), which moved it to 0.254 mm FR4.
 
 This file names the values and dispatches.  The work is in:
     geometry.py      LoopGap: parameters -> CSX + port
@@ -29,7 +30,7 @@ import src.check as check, src.meshview as meshview, src.simulate as simulate, s
 # Kept, not temp: one folder per run, each with the params.json that made it.
 # optimize.py puts its sweep points beside this design's own folder.
 Runs = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'runs')
-Sim_Path = os.path.join(Runs, 'rev2')   # runs/ is shared with main, whose base design is runs/loopgap
+Sim_Path = os.path.join(Runs, 'rev2')   # runs/ is shared with main, whose Rev 0 is runs/loopgap
 
 # UNITS: every length below is mm -- the grid unit is 1 mm.
 # The one exception is cu_t, which openEMS wants in METRES: the conducting-sheet
@@ -39,7 +40,7 @@ Sim_Path = os.path.join(Runs, 'rev2')   # runs/ is shared with main, whose base 
 geo = LoopGap(
     D1=14.0, D2=1.0,
     l1=10.9, l2=3.1,
-    g=0.1,
+    g=0.25,                            # Sasaki 0.1; 0.25 moves f_res 2.79 -> 2.86 GHz
     subs_eps=4.3, subs_tand=0.03,      # FR4
     subs_h=1.6,                        # standard FR4 (Sasaki et al.)
     subs_cells=4,
@@ -51,9 +52,9 @@ geo = LoopGap(
     trace_w=0.54, trace_w0=3.3,        # Sasaki: tapered 3.3 mm at the SMA -> 0.54 mm at the ring, for 50 ohm
     tap_depth=1.0,                     # .brd
     sma_inset=1.8,                     # .brd
-    cu_sigma=58e6, cu_t=18e-6,         # 18 um per Sasaki (JLCPCB's thinnest is 35 um; loss only) -- METRES
+    cu_sigma=58e6, cu_t=35e-6,         # JLCPCB 1 oz (Sasaki 18 um; loss only, no difference) -- METRES
     # Solder mask over the whole top, as on the board (its top mask opens only the SMA
-    # pad).  0 = keepout over the antenna: mask inside the 0.1 mm slot is an uncontrolled
+    # pad).  0 = keepout over the antenna: mask inside the slot is an uncontrolled
     # fab variable sitting on exactly what sets f0.  Nonzero costs a mask_t-sized z-cell,
     # so the timestep drops with it.
     mask_t=0.03, mask_eps=4.3, mask_tand=0.025,
@@ -62,7 +63,7 @@ geo = LoopGap(
 )
 # The revisions, for compare.py.  geo above is rev2.
 # rev0: Sewani et al.'s board as built -- 0.254 mm FR4, straight 0.476 mm (50 ohm) feed, 36 um Cu.
-rev0 = replace(geo, subs_h=0.254, neck_l=5.5, trace_w=0.476, trace_w0=0.476, cu_t=36e-6)
+rev0 = replace(geo, subs_h=0.254, neck_l=5.5, g=0.1, trace_w=0.476, trace_w0=0.476, cu_t=36e-6)
 # rev1: run 1's CMA-ES best on rev0's board (data/loopgap_ant_optimization, runs/opt/e57b2d7dd263)
 rev1 = replace(rev0, D1=11.959, D2=0.831, l1=11.959 / 2 + 3.390, l2=11.959 / 2 - 3.390, g=0.105, tap_depth=0.342)
 rev2 = geo
