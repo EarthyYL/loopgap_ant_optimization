@@ -29,7 +29,7 @@ if __name__ == "__main__":
         csx.Write2XML(xml)
         nx, ny, nz = (csx.GetGrid().GetQtyLines(d) for d in range(3))
         print(f"grid {nx} x {ny} x {nz} = {nx*ny*nz:,} cells")
-        os.environ['PATH'] += os.pathsep + '/home/yluo/opt/openEMS/bin'
+        os.environ['PATH'] += os.pathsep + '/home/yluo/opt/openEMS/bin'   # AppCSXCAD on this machine; elsewhere, put it on PATH
         from CSXCAD import AppCSXCAD_BIN
         raise SystemExit(os.system(AppCSXCAD_BIN + ' "{}"'.format(xml)))
     else:

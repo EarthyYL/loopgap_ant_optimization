@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run 1's CMA-ES search as one Slurm job.  From the clone's root: sbatch opt/optimize.sh
-# (README.md has run 1's steps, from when this was sim.sh).  Resume after a kill: submit it again.
+# (docs/run1-longleaf.md has run 1's steps, from when this was sim.sh).  Resume after a kill: submit it again.
 #SBATCH --job-name=loopgap-cmaes
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
