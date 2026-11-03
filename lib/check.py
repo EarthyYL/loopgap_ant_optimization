@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Verify that a LoopGap's geometry came OUT right -- the LoopGap asserts only check that
-the inputs were legal.  A wrong arc direction or a self-intersecting outline still
-builds, still runs, and gives a plausible-looking wrong answer.  No solve.
+Check that a LoopGap came out right, without a solve: its asserts only check the inputs, and a
+flipped arc or a self-intersecting outline still builds and gives a plausible wrong answer.
 """
 
 import numpy as np
@@ -16,7 +15,6 @@ def check(geo) -> None:
     xs, ys = (np.asarray(a) for a in geo.outline())
     poly = Path(np.column_stack([xs, ys]))
 
-    # outline area vs analytic catches a flipped arc or a self-intersecting outline
     area = 0.5 * abs(np.dot(xs, np.roll(ys, -1)) - np.dot(np.roll(xs, -1), ys))
     want = np.pi * R1**2 - np.pi * R2**2 - g * (yc + R1 - yi)
     assert abs(area - want) / want < 0.01, f"outline area {area:.3f} vs {want:.3f} mm^2"

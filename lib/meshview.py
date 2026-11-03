@@ -7,14 +7,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 
-SOLVER_MASK = 0x002 | 0x004   # MATERIAL | METAL: the property types openEMS queries per edge
+SOLVER_MASK = 0x002 | 0x004   # MATERIAL | METAL: the property types openEMS reads per edge
 
 
 def plot(geo) -> None:
-    # geo is a LoopGap object
     R1, R2, yc, z = geo.R1, geo.R2, geo.yc, geo.subs_h
     csx, _ = geo.build()
-    csx.Update()   # openEMS does this at setup; without it polygons and cylinders are never "inside"
+    csx.Update()   # without it, polygon and cylinder lookups find nothing
     X, Y = (np.asarray(csx.GetGrid().GetLines(d)) for d in range(2))
 
     def copper(x, y):
@@ -28,8 +27,9 @@ def plot(geo) -> None:
     fig, A = plt.subplots(2, 2, figsize=(12, 12), num='Mesh', tight_layout=True)
     fig.suptitle(f"grid {len(X)} x {len(Y)} x {csx.GetGrid().GetQtyLines(2)}, "
                  f"cu_res {geo.cu_res} mm over the C, {R2 / 5:g} mm over the hole")
-    for row, (lx, ly) in enumerate([((-R1 - 1, R1 + 1), (yc - R1 - 1, yc + R1 + 1)),   # whole C
-                                    ((-2 * R2, 2 * R2), (-2 * R2, 2.4 * R2))]):         # hole + slot root
+    whole_c = ((-R1 - 1, R1 + 1), (yc - R1 - 1, yc + R1 + 1))
+    slot_root = ((-2 * R2, 2 * R2), (-2 * R2, 2.4 * R2))
+    for row, (lx, ly) in enumerate([whole_c, slot_root]):
         a = A[row, 0]
         a.fill(xs, ys, color='#e8b070')
         a.vlines(X, *ly, lw=0.4); a.hlines(Y, *lx, lw=0.4)
