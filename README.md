@@ -18,6 +18,8 @@ design on standard 1.6 mm FR4
 designs.py, settings.py   data only: the board revisions (Rev 0, 1, 2); where runs go
 lib/                      shared library: geometry, solving, post-processing
 sim/                      scripts: check, view or solve a design; compare the revisions
+pcb/                      script: write Rev 2 as a KiCad board (python -m pcb.build)
+boards/                   the KiCad projects it writes
 opt/                      the parameter search behind Rev 1 (archived)
 docs/                     notes, e.g. how that search was run on a cluster
 ```

@@ -9,3 +9,8 @@
 *.sif
 cmaes_*.log
 /data
+# KiCad GUI files
+*-backups/
+*.kicad_prl
+*.lck
+fp-info-cache
