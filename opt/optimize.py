@@ -10,36 +10,29 @@ import os, sys, ctypes, json, hashlib, argparse
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import cma
-import src.simulate as simulate, src.postprocess as postprocess
-from sweep import design, KNOBS
-from loopgap import geo as base, Runs, sim_time
+import lib.simulate as simulate, lib.postprocess as postprocess
+from lib.knobs import design, KNOBS
+from designs import rev2 as base
+from settings import Runs, Data, sim_time
 
 F0, HALF_BAND, S11_MAX = 2.87e9, 0.1e9, -10.0
-# mm: diamond plate resting on the board, not chosen yet (0.3-0.5 seen).  B1 is read at its far
-# face: the weakest point for NVs through the whole plate.  0 reads at the board top instead,
-# right for a shallow NV layer face down.
-PLATE_T = 0.5
+PLATE_T = 0.5   # mm: B1 is read at the plate's top face, the weakest point
 
-# Search box in KNOBS order, mm: D1, D2, yc, g, tap_depth.  The asserts in LoopGap reject the
-# illegal combinations inside it.  D2's floor is optical access / the plate; g's is the fab's
-# minimum spacing.
+# search box in KNOBS order, mm; D2's floor is optical access, g's the fab's minimum spacing
 LO = np.array([ 6.0, 0.5, 0.0, 0.1, 0.3])
 HI = np.array([20.0, 2.0, 6.0, 1.0, 4.0])
-THREADS = 0   # openEMS threads per solve, 0 = all cores; the driver sets it in each worker
+THREADS = 0   # openEMS threads per solve (0 = all cores); set_threads sets it in each worker
 
 
 def solve(geo) -> str:
-    """Run folder named by a hash of everything that decides the output, so parallel workers
-    never collide and a design asked for twice is read back, not re-solved.  Code changes
-    (mesh, dumps) are not in the hash: clear runs/opt after one of those.
-    openEMS's own output goes to openems.log in that folder, so the job log keeps only the
-    driver's lines instead of 8 solves' progress lines interleaved."""
+    """Solve into a folder named by a hash of the design's params, so parallel workers never
+    collide and a repeat is read back; openEMS's output goes to openems.log there.  Code isn't
+    in the hash: clear runs/opt after changing the mesh or the dumps."""
     p = json.dumps(simulate.params(geo, sim_time), sort_keys=True)
-    path = os.path.join(Runs, 'opt', hashlib.sha1(p.encode()).hexdigest()[:12])   # absolute: Run chdirs
+    path = os.path.join(Runs, 'opt', hashlib.sha1(p.encode()).hexdigest()[:12])
     if not simulate.done(geo, path, sim_time):
         os.makedirs(path, exist_ok=True)
-        # openEMS prints from C++, which Python's redirect_stdout can't catch, so point this
-        # worker's stdout/stderr at the solve's own log while it runs (one solve per worker)
+        # openEMS prints from C++, beyond redirect_stdout: swap the file descriptors themselves
         with open(os.path.join(path, 'openems.log'), 'w') as log:
             saved = os.dup(1), os.dup(2)
             os.dup2(log.fileno(), 1); os.dup2(log.fileno(), 2)
@@ -54,32 +47,26 @@ def solve(geo) -> str:
 
 
 def cost_function(D1, D2, yc, g, tap_depth) -> float:
-    """Feasible (spec 2 met): -B1, negative.  Infeasible: how far off, positive.  The signs
-    alone rank every feasible design above every infeasible one, so there is no penalty
-    weight to tune -- but the jump at 0 suits rank-based optimisers (Nelder-Mead, CMA-ES,
-    DE), not a Gaussian process, which wants B1 and worst-S11 as separate outputs."""
+    """Feasible (spec 2 met): -B1.  Infeasible: how far off, positive, so every feasible design
+    outranks every infeasible one with no penalty weight; fine for a rank-based optimiser."""
     try:
         geo = design(D1, D2, yc, g, tap_depth)
-    except AssertionError:      # illegal geometry: worse than anything, and no solve spent
+    except AssertionError:
         return np.inf
     path = solve(geo)
-    band = np.linspace(F0 - HALF_BAND, F0 + HALF_BAND, 41)    # 5 MHz bins, both edges included
+    band = np.linspace(F0 - HALF_BAND, F0 + HALF_BAND, 41)
     worst = postprocess.s11_dB(geo, path, band).max()
     if worst <= S11_MAX:
-        return -postprocess.b1_at(geo, path, geo.subs_h + geo.mask_t + PLATE_T)   # board top + plate
-    # While the resonance is outside the band, worst sits flat near -0.5 dB whatever the
-    # knobs do; the f_res term is what gives the optimiser a slope there.  Ranking only: a
-    # low-Q design can meet the band with its S11 minimum outside it, and that one is feasible.
+        return -postprocess.b1_at(geo, path, geo.subs_h + geo.mask_t + PLATE_T)
+    # off resonance, worst sits flat near -0.5 dB: the f_res term gives the optimiser a slope
     f = np.linspace(geo.f0 - geo.fc, geo.f0 + geo.fc, 401)
     f_res = f[np.argmin(postprocess.s11_dB(geo, path, f))]
-    # Both terms dimensionless, 1 = a full unit of "off": the match term runs 0 at the spec to
-    # 1 at total reflection (a passive port can't exceed 0 dB); the f_res term is 1 at the band edge.
+    # each term is 1 for a full unit off: total reflection, or f_res a band edge away
     return (1 - worst / S11_MAX) + abs(f_res - F0) / HALF_BAND
 
 
 def knobs(u) -> np.ndarray:
-    """Unit cube -> knob values in mm.  CMA-ES searches the cube, so one step size suits
-    knobs that span 0.1 to 20 mm."""
+    """Unit cube to knob values in mm: CMA-ES searches the cube, so one step size suits all knobs."""
     return LO + np.asarray(u) * (HI - LO)
 
 
@@ -95,7 +82,7 @@ def cost_u(u) -> float:
     return cost_function(*knobs(u))
 
 
-def set_threads(n) -> None:   # pool initializer: each worker process has its own THREADS
+def set_threads(n) -> None:
     global THREADS
     THREADS = n
 
@@ -110,19 +97,18 @@ if __name__ == '__main__':
     ap.add_argument('--maxfevals', type=int, default=800, help='solve budget')
     a = ap.parse_args()
 
-    u0 = (np.array([getattr(base, k) for k in KNOBS]) - LO) / (HI - LO)   # start at loopgap.py's design
-    es = cma.CMAEvolutionStrategy(u0, 0.25, dict(   # 0.25 of the box: the usual start for a bounded search
+    u0 = (np.array([getattr(base, k) for k in KNOBS]) - LO) / (HI - LO)
+    es = cma.CMAEvolutionStrategy(u0, 0.25, dict(   # a quarter of the box: the usual bounded start
         bounds=[0, 1], popsize=a.popsize, seed=a.seed, maxfevals=a.maxfevals,
-        tolx=0.01,      # 1% of each range: below that the mesh, not the design, moves the cost
-        verb_log=0))    # data/cmaes.csv logs every design instead
-    # absolute, and rewritten from the top: a replayed run re-logs every generation anyway
-    log = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'cmaes.csv')
-    os.makedirs(os.path.dirname(log), exist_ok=True)   # data/ is gitignored, so a fresh clone lacks it
+        tolx=0.01,      # 1 % of each range: below that the mesh, not the design, moves the cost
+        verb_log=0))    # cmaes.csv logs every design instead
+    log = os.path.join(Data, 'cmaes.csv')   # rewritten: a replayed run re-logs every generation
+    os.makedirs(os.path.dirname(log), exist_ok=True)
     with open(log, 'w') as f, ProcessPoolExecutor(a.popsize, initializer=set_threads, initargs=(a.threads,)) as pool:
         f.write('gen,' + ','.join(f'{k}_mm' for k in KNOBS) + ',cost\n')
         while not es.stop():
             U = es.ask()
-            for i in range(len(U)):   # illegal geometry costs no solve: resample it instead of spending a slot
+            for i in range(len(U)):   # resample illegal designs rather than spend a slot on them
                 while not legal(U[i]):
                     U[i] = es.ask(1)[0]
             F = list(pool.map(cost_u, U))
